@@ -1,0 +1,51 @@
+!pip install roboflow
+!pip install torch torchvision
+!pip install --upgrade roboflow
+!pip install opencv-python
+from google.colab import drive
+drive.mount('/content/drive')
+from roboflow import Roboflow
+import os
+rf = Roboflow(api_key="Y0Omr1rk5QNzfIz1VbUL")  
+workspace = rf.workspace("nongnghiep")  
+project = workspace.project("hat_nay_mamm")  
+model = project.version(3).model 
+image_folder = '/content/drive/MyDrive/rice seed/rice_seed_data/'  
+for filename in os.listdir(image_folder):
+    if filename.endswith(('.jpg', '.jpeg', '.png')):
+        image_path = os.path.join(image_folder, filename)
+        predictions = model.predict(image_path, confidence=30, overlap=30).json()  
+        print(f"Kết quả dự đoán cho ảnh {filename}:")
+        print(predictions)
+import cv2
+from roboflow import Roboflow
+import matplotlib.pyplot as plt
+rf = Roboflow(api_key="Y0Omr1rk5QNzfIz1VbUL")  
+workspace = rf.workspace("nongnghiep")
+project = workspace.project("hat_nay_mamm")
+model = project.version(3).model
+image_folder = '/content/drive/MyDrive/rice seed/rice_seed_data/'
+image_files = [f for f in os.listdir(image_folder) if f.endswith('.jpg') or f.endswith('.jpeg') or f.endswith('.png')]
+for image_file in image_files:
+    image_path = os.path.join(image_folder, image_file)
+    if os.path.exists(image_path):
+        predictions = model.predict(image_path, confidence=30, overlap=30).json()
+        print(f"Kết quả dự đoán cho ảnh {image_file}:")
+        print(predictions)
+        image = cv2.imread(image_path)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        for prediction in predictions['predictions']:
+            x1, y1 = prediction['x'], prediction['y']
+            width, height = prediction['width'], prediction['height']
+            x2, y2 = x1 + width, y1 + height
+            color = (0, 255, 0) if prediction['class'] == 'germinated' else (255, 0, 255)  
+            image = cv2.rectangle(image, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
+            confidence = prediction['confidence']
+            label = f"confidence:{confidence*100:.1f}%"
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            cv2.putText(image, label, (int(x1), int(y1) - 10), font, 0.5, color, 1, cv2.LINE_AA)
+        plt.imshow(image)
+        plt.axis('off')
+        plt.show()
+    else:
+        print(f"Ảnh không tồn tại: {image_path}")
