@@ -1,54 +1,99 @@
-!pip install roboflow
-!pip install torch torchvision
-!pip install --upgrade roboflow
-!pip install opencv-python
+!pip install roboflow torch torchvision --upgrade opencv-python
+from google.colab import drive 
+drive.mount('/content/drive') 
 
-
-from google.colab import drive
-drive.mount('/content/drive')
-
-from roboflow import Roboflow
 import os
-rf = Roboflow(api_key="Y0Omr1rk5QNzfIz1VbUL")  
-workspace = rf.workspace("nongnghiep")  
-project = workspace.project("hat_nay_mamm")  
-model = project.version(3).model 
-image_folder = '/content/drive/MyDrive/rice seed/rice_seed_data/'  
-for filename in os.listdir(image_folder):
-    if filename.endswith(('.jpg', '.jpeg', '.png')):
-        image_path = os.path.join(image_folder, filename)
-        predictions = model.predict(image_path, confidence=30, overlap=30).json()  
-        print(f"Kết quả dự đoán cho ảnh {filename}:")
-        print(predictions)
 import cv2
 from roboflow import Roboflow
 import matplotlib.pyplot as plt
-rf = Roboflow(api_key="Y0Omr1rk5QNzfIz1VbUL")  
-workspace = rf.workspace("nongnghiep")
-project = workspace.project("hat_nay_mamm")
-model = project.version(3).model
+
+API_KEY = "Y0Omr1rk5QNzfIz1VbUL" 
+WORKSPACE_NAME = "nongnghiep"
+PROJECT_NAME = "hat_nay_mamm"
+PROJECT_VERSION = 3
+
+try:
+    rf = Roboflow(api_key=API_KEY)
+    workspace = rf.workspace(WORKSPACE_NAME)
+    project = workspace.project(PROJECT_NAME)
+    model = project.version(PROJECT_VERSION).model
+    print(f"Đã tải model {PROJECT_NAME} version {PROJECT_VERSION} thành công.")
+except Exception as e:
+    print(f"Lỗi khi khởi tạo Roboflow hoặc tải model: {e}")
+    exit()
+
 image_folder = '/content/drive/MyDrive/rice seed/rice_seed_data/'
-image_files = [f for f in os.listdir(image_folder) if f.endswith('.jpg') or f.endswith('.jpeg') or f.endswith('.png')]
+
+if not os.path.exists(image_folder):
+    print(f"Lỗi: Thư mục ảnh không tồn tại: {image_folder}")
+    exit()
+
+image_files = [f for f in os.listdir(image_folder) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+
+if not image_files:
+    print(f"Không tìm thấy file ảnh nào trong thư mục: {image_folder}")
+else:
+    print(f"Tìm thấy {len(image_files)} ảnh trong thư mục.")
+
 for image_file in image_files:
     image_path = os.path.join(image_folder, image_file)
-    if os.path.exists(image_path):
-        predictions = model.predict(image_path, confidence=30, overlap=30).json()
-        print(f"Kết quả dự đoán cho ảnh {image_file}:")
-        print(predictions)
-        image = cv2.imread(image_path)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        for prediction in predictions['predictions']:
-            x1, y1 = prediction['x'], prediction['y']
-            width, height = prediction['width'], prediction['height']
-            x2, y2 = x1 + width, y1 + height
-            color = (0, 255, 0) if prediction['class'] == 'germinated' else (255, 0, 255)  
-            image = cv2.rectangle(image, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
-            confidence = prediction['confidence']
-            label = f"confidence:{confidence*100:.1f}%"
+    print(f"\nĐang xử lý ảnh: {image_path}")
+
+    image = cv2.imread(image_path)
+    if image is None:
+        print(f"Lỗi: Không thể đọc file ảnh: {image_path}. Bỏ qua.")
+        continue
+
+    try:
+        # model.predict() có thể nhận đường dẫn file ảnh hoặc mảng NumPy
+        predictions_result = model.predict(image_path, confidence=30, overlap=30)
+        predictions_json = predictions_result.json() # Lấy JSON sau
+        print(f"Kết quả dự đoán thô cho ảnh {image_file}:")
+        print(predictions_json)
+    except Exception as e:
+        print(f"Lỗi khi lấy dự đoán cho ảnh {image_file}: {e}")
+        continue
+
+    display_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+    if 'predictions' in predictions_json and predictions_json['predictions']:
+        num_detections = len(predictions_json['predictions'])
+        print(f"Tìm thấy {num_detections} đối tượng.")
+        for prediction in predictions_json['predictions']:
+            # Roboflow trả về x, y là Tọa độ TRUNG TÂM
+            x_center = float(prediction['x'])
+            y_center = float(prediction['y'])
+            width = float(prediction['width'])
+            height = float(prediction['height'])
+
+            x1 = int(x_center - width / 2)
+            y1 = int(y_center - height / 2)
+            x2 = int(x_center + width / 2)
+            y2 = int(y_center + height / 2)
+
+            class_name = prediction.get('class', 'unknown_class') 
+            confidence_score = prediction.get('confidence', 0.0)
+
+            if class_name.lower() == 'germinated' or class_name.lower() == 'hat_nay_mam':
+                color = (0, 255, 0)  
+            else:
+                color = (255, 0, 255)
+
+            cv2.rectangle(display_image, (x1, y1), (x2, y2), color, 2)
+
+            label = f"{class_name}: {confidence_score*100:.1f}%"
             font = cv2.FONT_HERSHEY_SIMPLEX
-            cv2.putText(image, label, (int(x1), int(y1) - 10), font, 0.5, color, 1, cv2.LINE_AA)
-        plt.imshow(image)
-        plt.axis('off')
-        plt.show()
+        
+            text_y = y1 - 10 if y1 - 10 > 10 else y1 + int(height) + 20 
+            cv2.putText(display_image, label, (x1, text_y), font, 0.6, color, 1, cv2.LINE_AA)
     else:
-        print(f"Ảnh không tồn tại: {image_path}")
+        print(f"Không có đối tượng nào được phát hiện trong ảnh {image_file} với confidence >= 30.")
+
+    plt.figure(figsize=(10, 10)) # Điều chỉnh kích thước hiển thị nếu cần
+    plt.imshow(display_image)
+    plt.title(f"Dự đoán cho: {image_file}")
+    plt.axis('off') 
+    plt.show()
+    print(f"Đã hiển thị ảnh: {image_file}")
+
+print("\n--- Hoàn tất xử lý tất cả ảnh ---")
